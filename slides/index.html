@@ -1,0 +1,749 @@
+<title>Da conversa ao loop — Microsoft Agent Framework</title>
+<style>
+  :root {
+    /* palette lida das referências slide002.png / slide005.png:
+       fundo em degradê branco → lima, tinta quase-preta, cartões creme
+       com destaque lima vivo. */
+    --bg-a: #ffffff;
+    --bg-b: #e2fe31;
+    --bg-raised: #fdfde7;
+    --bg-panel: #1c1e13;
+    --ink: #202216;
+    --ink-dim: #4b4e3a;
+    --ink-faint: #767a5c;
+    --line: #d9d6ae;
+    --accent: #66790a;
+    --accent-fill: #d7f23c;
+    --accent-ink: #1c1e13;
+    --accent-2: #b3690a;
+    --accent-2-ink: #fff7ec;
+    --good: #1f8a56;
+    --shadow: 0 20px 50px -22px rgba(40,45,10,0.3);
+
+    /* textos sobre --bg-panel (escuro) — nunca usar --ink/--ink-dim aqui */
+    --dk-ink: #eef2d6;
+    --dk-ink-dim: #c3c79c;
+    --dk-ink-faint: #8b8f6c;
+    --dk-good: #7fe0a8;
+    --dk-amber: #e2a34a;
+
+    --display: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: linear-gradient(135deg, var(--bg-a) 0%, #f2fbb0 45%, var(--bg-b) 100%);
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: var(--body);
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html, body { scroll-behavior: auto; }
+    * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  }
+
+  h1, h2, h3 { font-family: var(--display); font-weight: 800; text-wrap: balance; margin: 0; }
+
+  .deck {
+    height: 100vh;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+  }
+
+  .slide {
+    min-height: 100vh;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(2rem, 6vw, 6rem);
+    position: relative;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .slide-inner {
+    max-width: 74rem;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin-bottom: 1.1rem;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 1.6em;
+    height: 1px;
+    background: var(--accent);
+    display: inline-block;
+  }
+
+  /* ---------- progress ring + dot nav ---------- */
+  .nav {
+    position: fixed;
+    right: clamp(1rem, 3vw, 2.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .ring-wrap { position: relative; width: 46px; height: 46px; margin-bottom: 0.4rem; }
+  .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-track { fill: none; stroke: var(--line); stroke-width: 3; }
+  .ring-fill { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
+    transition: stroke-dashoffset 0.4s ease; }
+  .ring-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--ink-dim); }
+
+  .dots { display: flex; flex-direction: column; gap: 0.55rem; }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1px solid var(--ink-faint);
+    background: transparent;
+    padding: 0; cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .dots button:hover { transform: scale(1.25); }
+  .dots button[aria-current="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .dots button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- typography helpers ---------- */
+  .display-xl { font-size: clamp(3.4rem, 7.6vw, 6.4rem); line-height: 1.0; letter-spacing: -0.01em; }
+  .display-lg { font-size: clamp(2.8rem, 6vw, 5rem); line-height: 1.05; }
+  .lede { font-family: var(--body); font-size: clamp(1.5rem, 2.4vw, 1.9rem); color: var(--ink-dim);
+    line-height: 1.48; max-width: 48rem; }
+  .kicker { font-family: var(--mono); font-size: 1.1rem; color: var(--ink-faint); }
+
+  .accent { color: var(--accent); }
+  .accent2 { color: var(--accent-2); }
+
+  /* ---------- code panels ---------- */
+  .code-panel {
+    background: var(--bg-panel);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .code-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid rgba(238,242,214,0.15);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--dk-ink-faint);
+  }
+  .code-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(238,242,214,0.2); }
+  .code-panel pre {
+    margin: 0;
+    padding: 0.85rem 1.1rem;
+    max-height: 32vh;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    line-height: 1.42;
+    color: var(--dk-ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tk-kw { color: var(--accent-fill); }
+  .tk-type { color: var(--dk-amber); }
+  .tk-str { color: var(--dk-good); }
+  .tk-com { color: var(--dk-ink-faint); font-style: italic; }
+  .tk-mut { color: var(--dk-ink-dim); }
+
+  /* ---------- generic layout blocks ---------- */
+  .split {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+    align-items: start;
+    margin-top: clamp(1.6rem, 3vw, 2.4rem);
+  }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+
+  .card {
+    border: 2px solid var(--ink);
+    background: var(--bg-raised);
+    border-radius: 12px;
+    padding: 0.95rem 1.1rem;
+    box-shadow: var(--shadow);
+  }
+  .card h4 {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 0.4rem;
+  }
+  .card p { margin: 0; color: var(--ink-dim); font-size: 1.25rem; line-height: 1.44; }
+  .card.good h4 { color: var(--good); }
+  .card.bad h4 { color: #b0432a; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    padding: 0.45rem 0.95rem;
+    border-radius: 999px;
+    border: 2px solid var(--ink);
+    color: var(--ink-dim);
+    background: var(--bg-raised);
+    font-weight: 600;
+  }
+  .chip.on { border-color: var(--accent-fill); color: var(--accent-ink); background: var(--accent-fill); font-weight: 700; }
+
+  table.cmp { border-collapse: collapse; width: 100%; margin-top: 1.6rem; }
+  table.cmp th, table.cmp td {
+    text-align: left;
+    padding: 0.95rem 1rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    font-size: 1.3rem;
+  }
+  table.cmp th {
+    font-family: var(--mono);
+    font-size: 0.92rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    font-weight: 700;
+  }
+  table.cmp td.layer { font-family: var(--display); font-size: 1.5rem; white-space: nowrap; }
+  table.cmp tr:last-child td { border-bottom: none; }
+  .table-scroll { overflow-x: auto; }
+
+  /* ---------- loop diagram (demo 3) ---------- */
+  /* ---------- loop-flow diagrams (demos 1/2/3) ---------- */
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; justify-content: center; }
+  .flow-step {
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    color: var(--ink);
+    background: var(--bg-raised);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 0.42rem 0.75rem;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .flow-step.on { border-color: var(--accent-fill); color: var(--accent-ink); background: var(--accent-fill); font-weight: 700; }
+  .flow-step.on2 { border-color: var(--accent-2); color: var(--accent-2-ink); background: var(--accent-2); }
+  .flow-step.good { border-color: var(--good); color: var(--good); }
+  .flow-arrow { color: var(--ink-faint); font-size: 1.1rem; flex: none; }
+  .flow-loopback {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--accent-2);
+    text-align: center;
+    margin-top: 0.5rem;
+  }
+
+  .loop-box {
+    border: 2px dashed var(--ink);
+    border-radius: 14px;
+    padding: 1.2rem 1rem 1rem;
+    position: relative;
+    margin-top: 1.3rem;
+  }
+  .loop-box-title {
+    position: absolute;
+    top: -0.8rem;
+    left: 1rem;
+    background: var(--bg-raised);
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .loop-box .loop-box { border-color: var(--accent); background: rgba(215,242,60,0.16); margin-top: 0.9rem; margin-bottom: 0.9rem; }
+  .loop-box .loop-box .loop-box-title { color: var(--accent); }
+
+  /* fileira compacta de cards abaixo do código (demos 1/2/3) */
+  .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.1rem; }
+  @media (max-width: 900px) { .card-row { grid-template-columns: 1fr; } }
+
+  footer.slide-foot {
+    margin-top: 2rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    color: var(--ink-faint);
+  }
+
+  a { color: var(--accent); }
+
+  ul.plain { list-style: none; margin: 1.1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+  ul.plain li { display: flex; gap: 0.7rem; align-items: baseline; color: var(--ink-dim); font-size: 1.4rem; line-height: 1.45; }
+  ul.plain li::before { content: "—"; color: var(--accent); flex: none; }
+
+  .num { font-family: var(--mono); color: var(--ink-faint); font-size: 0.95rem; }
+
+  /* ---------- speaker slide ---------- */
+  .speaker-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: clamp(2rem, 5vw, 4.5rem);
+    margin-top: 2rem;
+  }
+  @media (max-width: 820px) {
+    .speaker-grid { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  }
+  .avatar-frame {
+    width: clamp(240px, 24vw, 340px);
+    height: clamp(240px, 24vw, 340px);
+    border-radius: 28px;
+    border: 2px solid var(--ink);
+    background: var(--bg-raised);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    flex: none;
+  }
+  .avatar-frame img, .avatar-frame svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .avatar-frame.placeholder { display: flex; align-items: center; justify-content: center; }
+  .avatar-frame.placeholder svg { width: 46%; height: 46%; color: var(--ink-faint); }
+
+  .speaker-id { display: flex; flex-direction: column; gap: 1rem; }
+  .speaker-name { font-family: var(--display); font-size: clamp(2.6rem, 5.2vw, 4.2rem); }
+  .badge-mvp {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-2-ink);
+    background: var(--accent-2);
+    border-radius: 999px;
+    padding: 0.55rem 1.1rem 0.55rem 0.9rem;
+  }
+  .badge-mvp .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2-ink); opacity: 0.75; }
+
+  .speaker-link { font-family: var(--mono); font-size: 1.35rem; color: var(--ink-dim); }
+
+  .qr-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    flex: none;
+  }
+  .qr-plate {
+    background: #ffffff;
+    border: 2px solid var(--ink);
+    border-radius: 16px;
+    padding: 14px;
+    width: clamp(180px, 16vw, 240px);
+    height: clamp(180px, 16vw, 240px);
+    box-shadow: var(--shadow);
+  }
+  .qr-plate img, .qr-plate svg { width: 100%; height: 100%; display: block; }
+  .qr-caption { font-family: var(--mono); font-size: 1rem; color: var(--ink-faint); text-align: center; }
+</style>
+
+<div class="deck" id="deck">
+
+  <!-- 1. TITLE -->
+  <section class="slide" id="s1">
+    <div class="slide-inner">
+      <h1 class="display-xl">Da conversa<br>ao <span class="accent">loop</span>.</h1>
+      <p class="lede" style="margin-top:1.4rem;">
+        Evoluindo agentes com o <strong>Microsoft Agent Framework</strong> — quatro demos
+        em C#/.NET: três camadas de controle sobre um único agente, e uma última
+        mudando de eixo para um grafo de vários agentes.
+      </p>
+      <footer class="slide-foot">learn.microsoft.com/agent-framework · github.com/microsoft/agent-framework</footer>
+    </div>
+  </section>
+
+  <!-- 1b. SPEAKER -->
+  <section class="slide" id="speaker">
+    <div class="slide-inner">
+      <p class="eyebrow">quem fala</p>
+      <div class="speaker-grid">
+        <div class="avatar-frame" aria-label="Foto de Carlos Machel">
+          <img src="foto-machel-web.jpg" alt="Foto de Carlos Machel">
+        </div>
+        <div class="speaker-id">
+          <p class="speaker-name">Carlos Machel</p>
+          <span class="badge-mvp"><span class="dot"></span>Microsoft MVP</span>
+          <p class="speaker-link">linkedin.com/in/carlosmachel</p>
+        </div>
+        <div class="qr-card">
+          <div class="qr-plate">
+            <img src="linkedin-qr.svg" alt="QR code para o LinkedIn de Carlos Machel">
+          </div>
+          <p class="qr-caption">escaneie para conectar</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. HOOK / AGENDA -->
+  <section class="slide" id="s2">
+    <div class="slide-inner">
+      <p class="eyebrow">01 · gancho</p>
+      <h2 class="display-lg">Quantas vezes um agente<br><span class="accent2">parou no meio</span> da tarefa?</h2>
+      <p class="lede" style="margin-top:1.2rem;">
+        Ou "esqueceu" o que já tinha feito assim que você chamou de novo. Hoje vamos
+        ver por quê — e três formas de resolver isso, em camadas.
+      </p>
+      <div class="split" style="margin-top:2.2rem;">
+        <div class="card"><h4>o cenário</h4>
+          <p>Um Analista de Vendas com dados de receita mensal. O mesmo agente de
+          negócio nas 3 demos — só a camada em volta dele muda.</p></div>
+        <div class="card"><h4>a pergunta que guia tudo</h4>
+          <p>Todo agente que faz algo de verdade é, por baixo, um <strong>loop</strong>.
+          O quanto desse loop você controla é o que muda entre as camadas.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. O QUE É -->
+  <section class="slide" id="s3">
+    <div class="slide-inner">
+      <p class="eyebrow">02 · contexto</p>
+      <h2 class="display-lg">O sucessor oficial do<br><span class="accent">AutoGen</span> + <span class="accent">Semantic Kernel</span></h2>
+      <p class="lede" style="margin-top:1.2rem;">
+        Mesmo time. AutoGen + Semantic Kernel, num único abstrato:
+        <code style="font-family:var(--mono); font-size:0.85em;">AIAgent</code>.
+      </p>
+      <div class="chip-row">
+        <span class="chip on">.NET</span>
+        <span class="chip">Python</span>
+        <span class="chip">Go</span>
+        <span class="chip on">Foundry</span>
+        <span class="chip">Azure OpenAI</span>
+        <span class="chip">OpenAI</span>
+        <span class="chip">Anthropic</span>
+        <span class="chip">Ollama</span>
+      </div>
+      <p class="kicker" style="margin-top:1.1rem;">hoje: .NET + <span class="accent">Azure AI Foundry</span> via <code style="font-family:var(--mono)">Azure.AI.Projects</code> (<code style="font-family:var(--mono)">AIProjectClient</code>)</p>
+    </div>
+  </section>
+
+  <!-- 4. AS 3 CAMADAS -->
+  <section class="slide" id="s4">
+    <div class="slide-inner">
+      <p class="eyebrow">02 · contexto</p>
+      <h2 class="display-lg">Três camadas, um <span class="accent">único</span> <code style="font-family:var(--mono); font-size:0.85em;">AIAgent</code></h2>
+      <div class="table-scroll">
+        <table class="cmp">
+          <thead><tr><th>Camada</th><th>O que adiciona</th><th>Hoje</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="layer">Agents</td>
+              <td>Modelo + tools. Tool-calling em uma tacada.</td>
+              <td><span class="chip on">demo 1</span></td>
+            </tr>
+            <tr>
+              <td class="layer">Harness</td>
+              <td>Plano, todo-list, memória em arquivo, telemetria — de graça.</td>
+              <td><span class="chip on">demo 2</span></td>
+            </tr>
+            <tr>
+              <td class="layer">Loop&nbsp;engineering</td>
+              <td>Você projeta o critério de parada, não o modelo.</td>
+              <td><span class="chip on">demo 3</span></td>
+            </tr>
+            <tr>
+              <td class="layer">Workflows</td>
+              <td>Grafo explícito de agentes, com checkpoint.</td>
+              <td><span class="chip on">demo 4</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. DEMO 1 -->
+  <section class="slide" id="s5">
+    <div class="slide-inner">
+      <p class="eyebrow">03 · demo 1 — <span class="accent">agent simples</span></p>
+      <h2 class="display-lg">Agente tem tools. Executa num <span class="accent2">loop</span>.</h2>
+      <div class="flow" style="margin-top:1.6rem;">
+        <span class="flow-step">prompt</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-step on">modelo decide</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-step">chama tool</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-step">tool responde</span>
+      </div>
+      <p class="flow-loopback">↺ repete até não sobrar tool call — só então responde</p>
+      <div class="code-panel" style="margin-top:1.3rem;">
+        <div class="code-titlebar"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>Program.cs</div>
+        <pre><span class="tk-com">// client: AIProjectClient (Azure.AI.Projects)</span>
+<span class="tk-type">AIAgent</span> agent = client.<span class="tk-kw">AsAIAgent</span>(
+    deploymentName,
+    name: <span class="tk-str">"AnalistaDeVendas"</span>,
+    tools:
+    [
+        <span class="tk-kw">AIFunctionFactory</span>.Create(SalesTools.GetRevenue),
+        <span class="tk-kw">AIFunctionFactory</span>.Create(SalesTools.CompareRevenue),
+    ]);
+
+await agent.RunAsync(<span class="tk-str">"Compare, planeje e salve em .md"</span>);</pre>
+      </div>
+      <div class="card-row">
+        <div class="card good"><h4>funciona</h4><p>Pergunta única — o loop de tools resolve sozinho.</p></div>
+        <div class="card bad"><h4>não existe</h4><p>Plano, arquivo em disco, memória entre execuções.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. DEMO 2 -->
+  <section class="slide" id="s6">
+    <div class="slide-inner">
+      <p class="eyebrow">03 · demo 2 — <span class="accent">agent + harness</span></p>
+      <h2 class="display-lg">Mesmo agente. <span class="accent2">Loop</span> por fora.</h2>
+      <div class="loop-box" style="margin-top:1.3rem;">
+        <span class="loop-box-title">loop do harness</span>
+        <div class="flow">
+          <span class="flow-step">plano</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">todo-list</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step on">executa passo</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">verifica</span>
+        </div>
+        <div class="loop-box">
+          <span class="loop-box-title">loop do agente</span>
+          <div class="flow">
+            <span class="flow-step">modelo</span>
+            <span class="flow-arrow">⇄</span>
+            <span class="flow-step">tools</span>
+          </div>
+        </div>
+        <p class="flow-loopback">↺ repete até a todo-list fechar</p>
+      </div>
+      <div class="code-panel" style="margin-top:1.1rem;">
+        <div class="code-titlebar"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>Program.cs</div>
+        <pre><span class="tk-type">AIAgent</span> agent = client
+    .<span class="tk-kw">GetProjectOpenAIClient</span>().<span class="tk-kw">GetResponsesClient</span>()
+    .<span class="tk-kw">AsIChatClient</span>().<span class="tk-kw">AsHarnessAgent</span>(new <span class="tk-type">HarnessAgentOptions</span>
+    {
+        ChatOptions = new() { <span class="tk-mut">ModelId</span> = deploymentName },
+        FileAccessStore = new <span class="tk-type">FileSystemAgentFileStore</span>(outputDir),
+    });
+await agent.RunStreamingAsync(input, session);</pre>
+      </div>
+      <div class="card-row">
+        <div class="card"><h4>o momento "uau"</h4>
+          <p><span class="accent2">relatorio.md aparece no disco</span> — escrito pelo próprio agente.</p></div>
+        <div class="card bad"><h4>armadilha comum</h4>
+          <p>Esqueceu <code style="font-family:var(--mono)">ModelId</code>? Falha com <em>"Missing required parameter: model"</em>.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. DEMO 3 -->
+  <section class="slide" id="s7">
+    <div class="slide-inner">
+      <p class="eyebrow">03 · demo 3 — <span class="accent">loop engineering</span></p>
+      <h2 class="display-lg">Você decide o que significa <span class="accent2">"terminado"</span>.</h2>
+      <div class="loop-box" style="margin-top:1.3rem;">
+        <span class="loop-box-title">loop do juiz</span>
+        <div class="loop-box">
+          <span class="loop-box-title">loop do agente</span>
+          <div class="flow">
+            <span class="flow-step">modelo</span>
+            <span class="flow-arrow">⇄</span>
+            <span class="flow-step">tools</span>
+          </div>
+        </div>
+        <div class="flow" style="margin-top:0.9rem;">
+          <span class="flow-step">rascunho</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step on2">juiz avalia critérios</span>
+        </div>
+        <p class="flow-loopback">↺ reprovado → feedback → nova tentativa (máx. 3×)</p>
+      </div>
+      <div class="code-panel" style="margin-top:1.1rem;">
+        <div class="code-titlebar"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>Program.cs</div>
+        <pre><span class="tk-com">// workerAgent: o mesmo client.AsAIAgent(...) da demo 1</span>
+string[] criteria =
+[
+    <span class="tk-str">"Tabela markdown comparando os meses"</span>,
+    <span class="tk-str">"Secao 'Riscos' com 2+ itens"</span>,
+    <span class="tk-str">"Recomendacao de acao clara"</span>,
+];
+var judge = new <span class="tk-type">AIJudgeLoopEvaluator</span>(judgeClient, new() { Criteria = criteria });
+
+<span class="tk-type">AIAgent</span> loopedAgent = new <span class="tk-type">LoopAgent</span>(workerAgent, judge,
+    new <span class="tk-type">LoopAgentOptions</span> { MaxIterations = <span class="tk-mut">3</span> });</pre>
+      </div>
+      <div class="card-row">
+        <div class="card"><h4>não é prompt engineering</h4><p>São critérios de aceite — tipo um teste automatizado pra texto.</p></div>
+        <div class="card bad"><h4>trava de segurança</h4><p>Loop julgado por IA custa tempo e dinheiro. Sempre tenha um teto.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7b. DEMO 4 -->
+  <section class="slide" id="s7b">
+    <div class="slide-inner">
+      <p class="eyebrow">03 · demo 4 — <span class="accent">workflow (multi-agente)</span></p>
+      <h2 class="display-lg">As 3 anteriores giram em torno de UM agente. Essa troca de <span class="accent2">eixo</span>.</h2>
+      <div class="loop-box" style="margin-top:1.3rem;">
+        <span class="loop-box-title">grafo do workflow</span>
+        <div class="flow">
+          <span class="flow-step">pergunta</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step on">Coordenador</span>
+        </div>
+        <p class="flow-loopback">fan-out — os dois rodam em paralelo</p>
+        <div class="flow">
+          <span class="flow-step good">AnalistaFinanceiro</span>
+          <span class="flow-step good">AnalistaDeProduto</span>
+        </div>
+        <p class="flow-loopback">fan-in barrier — só segue quando os dois terminarem</p>
+        <div class="flow">
+          <span class="flow-step on2">Redator</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">relatorio-workflow.md</span>
+        </div>
+      </div>
+      <div class="code-panel" style="margin-top:1.1rem;">
+        <div class="code-titlebar"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>Program.cs</div>
+        <pre><span class="tk-com">// coordenador, analistaFinanceiro, analistaDeProduto e redatorAgent já existem</span>
+<span class="tk-type">Workflow</span> workflow = new <span class="tk-type">WorkflowBuilder</span>(coordenador)
+    .<span class="tk-kw">AddFanOutEdge</span>(coordenador, [analistaFinanceiro, analistaDeProduto])
+    .<span class="tk-kw">AddFanInBarrierEdge</span>([analistaFinanceiro, analistaDeProduto], redator)
+    .<span class="tk-kw">WithOutputFrom</span>(redator)
+    .<span class="tk-kw">Build</span>();
+
+await using <span class="tk-type">StreamingRun</span> run =
+    await <span class="tk-type">InProcessExecution</span>.<span class="tk-kw">RunStreamingAsync</span>(workflow, pergunta);</pre>
+      </div>
+      <div class="card-row">
+        <div class="card"><h4>outro eixo</h4><p>Não é mais controle sobre UM agente — é orquestração explícita entre <strong>vários</strong>.</p></div>
+        <div class="card bad"><h4>cuidado</h4><p>O fan-in barrier espera <strong>todos</strong> os ramos — um agente travado trava o grafo inteiro.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. COMPARAÇÃO -->
+  <section class="slide" id="s8">
+    <div class="slide-inner">
+      <p class="eyebrow">04 · fechamento</p>
+      <h2 class="display-lg">Quando usar <span class="accent">qual</span> camada</h2>
+      <div class="table-scroll">
+        <table class="cmp">
+          <thead><tr><th>Camada</th><th>Use quando...</th></tr></thead>
+          <tbody>
+            <tr><td class="layer">Agent simples</td><td>pergunta única, resposta em uma tomada.</td></tr>
+            <tr><td class="layer">Harness</td><td>tarefa multi-passo — confia no bom senso do modelo pra saber quando parou.</td></tr>
+            <tr><td class="layer">Loop engineering</td><td>critério de qualidade explícito, não só o "bom senso" do modelo.</td></tr>
+            <tr><td class="layer">Workflows</td><td>execução determinística — vários agentes, ordem fixa, checkpoint.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. CTA -->
+  <section class="slide" id="s9">
+    <div class="slide-inner">
+      <p class="eyebrow">obrigado</p>
+      <h2 class="display-xl">O agente que parava<br>no meio? <span class="accent">Agora ele não para</span><br>até terminar.</h2>
+      <ul class="plain" style="margin-top:1.8rem;">
+        <li>github.com/microsoft/agent-framework — repositório público, ativo</li>
+        <li>learn.microsoft.com/agent-framework — docs oficiais</li>
+        <li>código das 4 demos: pasta <code style="font-family:var(--mono)">src/</code> deste repositório</li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+
+<nav class="nav" aria-label="Navegação de slides">
+  <div class="ring-wrap">
+    <svg viewBox="0 0 46 46">
+      <circle class="ring-track" cx="23" cy="23" r="19"></circle>
+      <circle class="ring-fill" id="ringFill" cx="23" cy="23" r="19"
+        stroke-dasharray="119.4" stroke-dashoffset="119.4"></circle>
+    </svg>
+    <div class="ring-num" id="ringNum">1/9</div>
+  </div>
+  <div class="dots" id="dots"></div>
+</nav>
+
+<script>
+  (function () {
+    var deck = document.getElementById('deck');
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    var dotsWrap = document.getElementById('dots');
+    var ringFill = document.getElementById('ringFill');
+    var ringNum = document.getElementById('ringNum');
+    var CIRC = 2 * Math.PI * 19;
+    var current = 0;
+
+    slides.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.setAttribute('aria-label', 'Ir para slide ' + (i + 1));
+      b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+      dotsWrap.appendChild(b);
+    });
+    var dotEls = Array.prototype.slice.call(dotsWrap.children);
+
+    function setActive(i) {
+      current = i;
+      dotEls.forEach(function (d, j) { d.setAttribute('aria-current', j === i ? 'true' : 'false'); });
+      var frac = (i + 1) / slides.length;
+      ringFill.setAttribute('stroke-dashoffset', String(CIRC * (1 - frac)));
+      ringNum.textContent = (i + 1) + '/' + slides.length;
+    }
+
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && e.intersectionRatio > 0.55) {
+          setActive(slides.indexOf(e.target));
+        }
+      });
+    }, { root: deck, threshold: [0.55] });
+    slides.forEach(function (s) { io.observe(s); });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault();
+        slides[Math.min(current + 1, slides.length - 1)].scrollIntoView({ behavior: 'smooth' });
+      } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault();
+        slides[Math.max(current - 1, 0)].scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+
+    setActive(0);
+  })();
+</script>
