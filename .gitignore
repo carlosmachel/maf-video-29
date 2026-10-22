@@ -428,4 +428,5 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-.ideaslides/foto-machel.jpg
+.idea
+slides/foto-machel.jpg
